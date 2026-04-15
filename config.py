@@ -1,0 +1,11 @@
+COLLECTION_NAME = "sanskrit_texts"
+DENSE_DIM = 1024
+EMBEDDING_MODEL = "baai/bge-m3"
+RERANKER_MODEL = "nvidia/nv-rerankqa-mistral-4b-v3"
+GENERATOR_MODEL = "openai/gpt-oss-120b"    # Groq — verified live 2026-04-15
+FALLBACK_MODEL  = "google/gemma-3-27b-it:free"  # OpenRouter
+TOP_K_RETRIEVE = 10
+TOP_K_RERANK = 5
+CHUNK_MIN_SHLOKAS = 2
+CHUNK_MAX_SHLOKAS = 4
+CHUNK_OVERLAP_SHLOKAS = 1
