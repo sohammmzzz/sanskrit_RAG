@@ -28,7 +28,7 @@ BASE_URL = "https://integrate.api.nvidia.com/v1"
 # Client
 # -------------------------------------------------------------------
 def _get_client() -> OpenAI:
-    api_key = "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"
+    api_key = os.getenv("NVIDIA_NIM_EMBED_API_KEY") 
 
     if not api_key:
         raise ValueError("Set NVIDIA_API_KEY (or NGC_API_KEY) in environment")
