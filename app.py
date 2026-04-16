@@ -31,6 +31,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+st.set_option("client.toolbarMode", "viewer")
+
 
 # ── Design System ─────────────────────────────────────────────────────────────
 st.markdown("""
