@@ -1,10 +1,10 @@
 """
 pipeline/parser.py
 ──────────────────
-LlamaParse v2  ·  tier = agentic_plus
+LlamaParse v1  ·  parse_mode = parse_document_with_agent
 Handles multilingual PDFs: Sanskrit (Devanagari), Hindi, and English mixed content.
 
-Install:  pip install llama-cloud>=1.0
+Install:  pip install llama-parse
 """
 
 from __future__ import annotations
@@ -62,12 +62,30 @@ def _run(coro):
 # ─────────────────────────────────────────────────────────────────────────────
 #  Main entry point
 # ─────────────────────────────────────────────────────────────────────────────
+def parse_document(
+    file_path: str,
+    status_callback: Optional[Callable[[str], None]] = None,
+) -> list[str]:
+    """
+    Unified entry point.
+    .pdf  → parse_pdf()   (LlamaParse v1 → PyMuPDF)
+    .doc/.docx → _docx_parse()  (python-docx)
+    """
+    ext = Path(file_path).suffix.lower()
+    if ext in (".doc", ".docx"):
+        _status(status_callback, "Word document detected — routing to python-docx parser…")
+        return _docx_parse(file_path, status_callback)
+    else:
+        _status(status_callback, "PDF detected — routing to LlamaParse v1…")
+        return parse_pdf(file_path, status_callback)
+
+
 def parse_pdf(
     pdf_path: str,
     status_callback: Optional[Callable[[str], None]] = None,
 ) -> list[str]:
     """
-    Parse a PDF with LlamaParse v2  (tier = agentic_plus).
+    Parse a PDF with LlamaParse v1 (parse_document_with_agent).
 
     Parameters
     ----------
@@ -90,80 +108,13 @@ def parse_pdf(
             "Get a key at https://cloud.llamaindex.ai/api-key"
         )
 
-    _status(status_callback, "Initialising LlamaParse v2 (agentic_plus tier)…")
-
-    # ── Try the new llama-cloud >= 1.0 SDK first ──────────────────────────────
-    try:
-        from llama_cloud import LlamaParse  # pip install llama-cloud>=1.0
-
-        parser = LlamaParse(
-            api_key=api_key,
-            # ── Tier ──────────────────────────────────────────────────────────
-            # agentic_plus: full-document agentic loop — best for complex layouts,
-            # mixed scripts, and documents with visual + textual content together.
-            tier="agentic_plus",
-            # ── Language hints (helps the OCR model weigh character sets) ─────
-            # "hi" covers Devanagari (Sanskrit + Hindi); English is always auto-detected.
-            language="hi",
-            # ── Output format ─────────────────────────────────────────────────
-            result_type="markdown",
-            # ── Custom prompt to preserve Devanagari faithfully ───────────────
-            custom_prompt=_MULTILINGUAL_PROMPT,
-            # ── OCR / quality flags ───────────────────────────────────────────
-            high_res_ocr=True,          # higher-resolution scan pass
-            verbose=False,
-        )
-
-        _status(status_callback, "Uploading PDF to LlamaParse cloud (agentic_plus)…")
-        t0 = time.time()
-
-        # aparse() returns a ParseResult; aget_text_nodes() returns per-page nodes
-        result = _run(parser.aparse(pdf_path))
-
-        _status(status_callback, "Waiting for agentic parsing to complete…")
-        text_nodes = _run(result.aget_text_nodes())
-
-        elapsed = time.time() - t0
-        _status(
-            status_callback,
-            f"LlamaParse v2 finished — {len(text_nodes)} pages in {elapsed:.1f}s",
-        )
-
-        pages = [node.text.strip() for node in text_nodes if node.text.strip()]
-        return pages if pages else _fallback_parse(pdf_path, status_callback)
-
-    except ImportError:
-        _status(
-            status_callback,
-            "llama-cloud not found — falling back to llama-parse v1…  "
-            "(run: pip install llama-cloud>=1.0 to use v2)",
-        )
-        return _v1_parse(pdf_path, status_callback)
-
-    except Exception as exc:
-        _status(status_callback, f"LlamaParse v2 error: {exc} — trying v1 fallback…")
-        return _v1_parse(pdf_path, status_callback)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  Fallback A — llama-parse v1  (pip install llama-parse)
-# ─────────────────────────────────────────────────────────────────────────────
-def _v1_parse(
-    pdf_path: str,
-    status_callback: Optional[Callable[[str], None]] = None,
-) -> list[str]:
-    """
-    Legacy llama-parse v1 SDK fallback.
-    Uses parse_mode='parse_document_with_agent' which is the v1 equivalent
-    of agentic_plus — processes the whole document in a single pass.
-    """
     try:
         from llama_parse import LlamaParse  # pip install llama-parse
 
         _status(status_callback, "Using llama-parse v1 SDK (parse_document_with_agent)…")
 
         parser = LlamaParse(
-            api_key=os.getenv("LLAMA_CLOUD_API_KEY"),
+            api_key=api_key,
             result_type="markdown",
             language="hi",                          # Devanagari hint
             parse_mode="parse_document_with_agent", # full-document agentic pass
@@ -174,7 +125,7 @@ def _v1_parse(
 
         extra_info = {"file_name": Path(pdf_path).name}
         documents = parser.load_data(pdf_path, extra_info=extra_info)
-        _status(status_callback, f"v1 parse done — {len(documents)} document segments")
+        _status(status_callback, f"LlamaParse v1 done — {len(documents)} document segments")
 
         pages = [doc.text.strip() for doc in documents if doc.text.strip()]
         return pages if pages else _fallback_parse(pdf_path, status_callback)
@@ -183,12 +134,12 @@ def _v1_parse(
         _status(status_callback, "llama-parse not installed. Falling back to PyMuPDF…")
         return _fallback_parse(pdf_path, status_callback)
     except Exception as exc:
-        _status(status_callback, f"v1 parse error: {exc}. Falling back to PyMuPDF…")
+        _status(status_callback, f"LlamaParse v1 error: {exc}. Falling back to PyMuPDF…")
         return _fallback_parse(pdf_path, status_callback)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  Fallback B — PyMuPDF (offline, no API required)
+#  Fallback — PyMuPDF (offline, no API required)
 # ─────────────────────────────────────────────────────────────────────────────
 def _fallback_parse(
     pdf_path: str,
@@ -223,10 +174,38 @@ def _fallback_parse(
         raise RuntimeError(
             "No PDF parsing backend available.\n"
             "Install at least one of:\n"
-            "  pip install llama-cloud>=1.0\n"
             "  pip install llama-parse\n"
             "  pip install pymupdf"
         )
+
+
+def _docx_parse(
+    doc_path: str,
+    status_callback: Optional[Callable[[str], None]] = None,
+) -> list[str]:
+    """
+    Extract text from .doc / .docx using python-docx.
+    Install:  pip install python-docx
+    """
+    _status(status_callback, "Extracting text from Word document (python-docx)…")
+    try:
+        from docx import Document
+        doc = Document(doc_path)
+        pages, current = [], []
+        for para in doc.paragraphs:
+            text = para.text.strip()
+            if not text:
+                if current:
+                    pages.append("\n".join(current))
+                    current = []
+            else:
+                current.append(text)
+        if current:
+            pages.append("\n".join(current))
+        _status(status_callback, f"python-docx done — {len(pages)} sections extracted")
+        return pages if pages else [""]
+    except ImportError:
+        raise RuntimeError("pip install python-docx  to handle .docx files")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
